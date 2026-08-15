@@ -1,11 +1,12 @@
 """Six-view MatRisk decision cockpit, including the two-level Lab simulator."""
 from __future__ import annotations
+
 from pathlib import Path
+
 import pandas as pd
-import numpy as np
-import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+import streamlit as st
 
 from src.data.loaders import load_csv, merge_market_data
 from src.financial.credit_risk import calculate_credit_risk
@@ -15,14 +16,43 @@ from src.models.gan.inverse_designer import generate_candidates
 from src.models.survival.risk import bridge_hazard, survival_curve
 from src.simulator.game_engine import GameState, apply_decision
 
-ROOT=Path(__file__).resolve().parents[2]; DATA=ROOT/"data"/"raw"
+ROOT = Path(__file__).resolve().parents[2]
+RAW_DATA = ROOT / "data" / "raw"
+DEMO_DATA = ROOT / "data" / "demo"
+
+
+def resolve_data_dir() -> Path:
+    """Use DVC-managed raw data locally and tracked demo data in Streamlit Cloud."""
+    required = {
+        "DS1_material_properties_5500.csv",
+        "DS2_commodity_prices_10yr.csv",
+        "DS3_infrastructure_bridges_5000.csv",
+        "DS4_crossdomain_features_daily.csv",
+        "DS5_element_prices_monthly.csv",
+        "DS6_historical_failures_2000.csv",
+    }
+    for candidate in (RAW_DATA, DEMO_DATA):
+        if required.issubset({path.name for path in candidate.glob("DS*.csv")}):
+            return candidate
+    return DEMO_DATA
+
+
+DATA = resolve_data_dir()
 st.set_page_config(page_title="MatRisk AI",page_icon="◈",layout="wide")
 st.markdown("""<style>.block-container{padding-top:1.5rem}.metric-card{border:1px solid #26334a;border-radius:14px;padding:12px}</style>""",unsafe_allow_html=True)
 st.title("MatRisk AI · Material intelligence for financial risk")
 page=st.sidebar.radio("Decision workspace",["Material Explorer","Commodity Signals","Infrastructure Risk","Inverse Designer","ESG Impact","MatRisk Lab"])
 
 @st.cache_data
-def data(name): return load_csv(DATA/name)
+def data(name):
+    path = DATA / name
+    if not path.exists():
+        st.error(
+            f"Required dataset is unavailable: {name}. "
+            "Deploy the tracked data/demo directory or restore data/raw with DVC."
+        )
+        st.stop()
+    return load_csv(path)
 
 if page=="Material Explorer":
     df=data("DS1_material_properties_5500.csv"); formula=st.text_input("Chemical formula",df.formula.iloc[0])
@@ -58,4 +88,3 @@ else:
         st.session_state.game,outcome=apply_decision(state,maintenance,hedge,insurance); st.success(f"Turn complete: {outcome['scenario']}"); st.json(outcome); st.rerun()
 
 st.caption("Decision-support prototype · estimates are scenario outputs, not investment, credit, or engineering advice")
-
